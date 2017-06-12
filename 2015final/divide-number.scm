@@ -1,0 +1,21 @@
+;f[i][j] = f[i][j-1] + f[i-j][min(i-j,j)]
+#lang racket
+(define N 201)
+(define f (build-vector 201 (lambda (x) (make-vector 201 0))))
+(define (Fr x y) (vector-ref (vector-ref f x) y))
+(define (Fs x y k) (vector-set! (vector-ref f x) y k))
+(Fs 0 0 1)
+(for-each (lambda (i)
+	(for-each (lambda (j)
+		(Fs i j (+ (Fr i (- j 1)) (Fr (- i j) (min (- i j) j))))
+	) (range 1 (+ i 1)))
+) (range 1 201))
+(let loop ()
+	(let ([n (read)])
+		(unless (eq? n eof)
+			(displayln (Fr n n))
+			(loop)
+		)
+	)
+)
+
