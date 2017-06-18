@@ -1,7 +1,9 @@
 # Structure and Interpretation of Computer Programs
 
 Spring 2017
+
 Department of Computer Science and Technology
+
 Peking University
 
 ------
