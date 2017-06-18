@@ -10,7 +10,7 @@ Peking University
 
 * **Time:** Thursday, 6:40 PM - 9.30 PM
 * **Instructor:** Guo Wei
-* **Site:** [lisp.test.openjudge.org]()
+* **Site:** [lisp.test.openjudge.org](http://lisp.test.openjudge.org)
 
 
 ## Grading
@@ -27,6 +27,6 @@ Peking University
 ## Useful Resources
 
 * [MIT SICP](https://mitpress.mit.edu/sicp/)
-* [Racket Documentation](racket-lang.org)
+* [Racket Documentation](https://racket-lang.org)
 * [Learn Racket in Y minutes](https://learnxinyminutes.com/docs/racket/)
 * [My Presentation: Shortest Racket Code Collection](slides.com/colrko/shortest-racket-code-collection/)
