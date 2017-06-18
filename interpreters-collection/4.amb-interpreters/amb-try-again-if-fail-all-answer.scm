@@ -1,35 +1,14 @@
 #lang racket
-
-
-
-
-
-
-
-
-
-
-
-
-
+;basic amb evaluator
 (require racket/mpair)
 
-(define (my-display x)   (void))
-(define my-newline void)
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+(define (my-display x) 
+  (cond ((and (mpair? x) (eq? (mcar x) 'primitive))
+         (display (get-list-head x 2)))
+        ((and (pair? x) (eq? (car x) 'procedure))
+         (display (get-list-head x 3)))
+        (else (display x))))
+(define (my-newline) (newline))
 
 (define (simple-proc-obj proc-obj)
   (if (mpair? proc-obj) 
@@ -92,31 +71,6 @@
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 (define (self-evaluating? exp)
    (cond ((number? exp) true)
          ((string? exp) true)
@@ -139,7 +93,6 @@
 
 
 (define (variable? exp) (symbol? exp))  
-
 
 (define (quoted? exp)  (tagged-list? exp 'quote))
 
@@ -224,11 +177,6 @@
 
 (define (make-if predicate consequent alternative)
   (list 'if predicate consequent alternative))
-
-
-(define (if-fail? exp) (tagged-list? exp 'if-fail))
-(define (if-fail-first exp) (cadr exp))
-(define (if-fail-second exp) (caddr exp))
 
 
 (define (begin? exp)
@@ -381,7 +329,6 @@
 
 (define (extend-environment vars vals base-env)  
 
-  (my-display "in ext-env: var  = ") (my-display vars) (my-display " vals = ") (my-display vals) (my-newline) 
   (if (= (mlength vars) (mlength vals))
 
        (mcons (make-frame vars vals) base-env) 
@@ -391,15 +338,12 @@
            (error "Too few arguments supplied" vars vals))))
 
 (define (lookup-variable-value var env)
-  
-
   (define (env-loop env)
     (define (scan vars vals)
       (cond ((null? vars)
              (env-loop (enclosing-environment env)))
             ((eq? var (mcar vars)) 
 
-             (my-display "in lookup-variable-value:") (my-display var) (my-display " = " ) (my-display (mcar vals)) (my-newline)
              (mcar vals)) 
 
             (else (scan (mcdr vars) (mcdr vals))))) 
@@ -409,8 +353,6 @@
         (let ((frame (first-frame env)))
           (scan (frame-variables frame)
                 (frame-values frame)))))
-  
-
   (env-loop env))
 
 
@@ -433,7 +375,6 @@
 
 (define (define-variable! var val env) 
 
-  (my-display "in define-variable! var =") (my-display var) (my-display "  val=") (my-display val) (my-newline)
   (let ((frame (first-frame env)))
     (define (scan vars vals)
       (cond ((null? vars)
@@ -447,54 +388,30 @@
           (frame-values frame))))
 
 
+(define (my-square x ) (* x x))
 
 (define (apply-primitive-procedure proc args) 
-
-   
-
    (apply  
-
     (primitive-implementation proc) (mymlist->list args)))  
 
 
 
-
-
-
-(define (my-square x ) (* x x))
-
 (define primitive-procedures
   (mlist (mlist 'car car) 
-
         (mlist 'cdr cdr) 
-
         (mlist 'cons cons) 
-
         (mlist 'null? null?) 
-
         (mlist '+ +) 
-
         (mlist '* *) 
-
         (mlist '- -) 
-
         (mlist '/ /) 
-
         (mlist '< <) 
-
         (mlist '> >) 
-
         (mlist '= =) 
-
         (mlist 'number? number?) 
-
         (mlist 'pair? pair?) 
-
         (mlist 'not not) 
-
         (mlist 'remainder remainder) 
-
-        (mlist 'my-square  my-square)
         (mlist 'length  length)
         (mlist 'sqrt  sqrt)
         (mlist 'list  list)
@@ -506,31 +423,24 @@
         (mlist 'newline  newline)
         (mlist 'not not)
         (mlist 'void void)
+        (mlist 'my-square  my-square)        
         )) 
 
 
-(define primitive-proceduresss
-  (mlist
-        (mlist '* *) 
 
-       
-        )) 
+
 
 (define (primitive-procedure-names) 
-
   (mmap mcar  
-
        primitive-procedures))  
 
 
 (define (primitive-procedure-objects)
   (mmap (lambda (proc) (mlist 'primitive (mcadr proc))) 
-
        primitive-procedures))
 
 
 (define (setup-environment ) 
-
   (let ((initial-env
          (extend-environment (primitive-procedure-names) 
 
@@ -539,20 +449,18 @@
         (define-variable! 'true true initial-env)
         (define-variable! 'false false initial-env)
         initial-env))
-
-
         
 (define (primitive-procedure? proc)  
-
         (mtagged-list? proc 'primitive)) 
 
 
 (define (primitive-implementation proc) (mcadr proc)) 
 
+(define (prompt-for-input string)
+   (newline) (newline) (display string) (newline))
 
-
-
-
+(define (announce-output string)
+   (newline) (display string) (newline))
              
 (define (user-print object)
    (if (compound-procedure? object)
@@ -562,23 +470,31 @@
                       '<procedure-env>))
        (display object)))
 
-
-
  
 (define (ambeval exp env succeed fail)  
-
   ((analyze exp) env succeed fail))  
 
 
+(define (if-fail? exp) (tagged-list? exp 'if-fail))
+(define (analyze-if-fail exp)
+  (let ((pproc (analyze (if-predicate exp)))
+        (cproc (analyze (if-consequent exp))))
+    (lambda (env succeed fail) 
+      (pproc env
+             (lambda (val fail2) (succeed val fail))
+             (lambda ()
+               (cproc env succeed fail))))))
 
-
-
-
-
+(define (all-answer? exp) (tagged-list? exp 'all-answer))
+(define (analyze-all-answer exp)
+  (let ((abody (analyze (cadr exp))))
+    (lambda (env succeed fail) 
+      (abody env
+             (lambda (val fail2) (unless (eq? val (void)) (displayln val)) (fail2))
+             (lambda ()
+               (void))))))
 
 (define (analyze exp)   
-
-  (my-display "in analyze exp:") (my-display exp) (my-newline)
    (cond ((self-evaluating? exp) 
           (analyze-self-evaluating exp))
          ((null? exp) (lambda (env succeed fail) (succeed ((void)) fail))) 
@@ -589,7 +505,6 @@
          ((assignment? exp) (analyze-assignment exp))
          ((definition? exp) (analyze-definition exp))
          ((if? exp) (analyze-if exp))
-         ((if-fail? exp) (analyze-if-fail exp))
          ((lambda? exp) (analyze-lambda exp))
          ((begin? exp) (analyze-sequence (begin-actions exp)))
          ((cond? exp) (analyze (cond->if exp)))  
@@ -597,19 +512,17 @@
          ((let? exp) (analyze (let->combination exp))) 
 
          ((amb? exp) (analyze-amb exp))
+         ((if-fail? exp) (analyze-if-fail exp))
+         ((all-answer? exp) (analyze-all-answer exp))
          ((application? exp) (analyze-application exp))
          (else
           (error "Unknown expression type -- ANALYZE" exp))))
 
 
-
-
 (define (analyze-self-evaluating exp) 
-
    (lambda (env succeed fail) 
-     (my-display " ***** CS in analyze-self-evaluating,scd=") (my-display succeed) (my-display " exp=") (my-display exp) (my-newline)
-     (succeed exp fail)
-     (my-display " ***** endof CS in analyze-self-evaluating,scd=") (my-display succeed) (my-display " exp=") (my-display exp) (my-newline)))
+     (succeed exp fail)))
+
 
 (define (analyze-quoted exp)
    (let ((qval (text-of-quotation exp)))
@@ -617,43 +530,17 @@
        (succeed qval fail))))
 
 (define (analyze-variable exp)  
-
-  (my-display "in analyze-variable exp:") (my-display exp) (my-newline) 
   (lambda (env succeed fail) 
-    (my-display " ***** CS in analyze-variable,scd=") (my-display succeed) (my-display " exp=") (my-display exp) (my-newline)
      (succeed (lookup-variable-value exp env) fail)
-    (my-display " ***** end of CS in analyze-variable,scd=") (my-display succeed) (my-display " exp=") (my-display exp) (my-newline)
     ))
 
 
 (define (analyze-lambda exp) 
-
-  (my-display "in analyze-lambda:") (my-display exp) (my-newline)
    (let ((vars (lambda-parameters exp))
          (bproc (analyze-sequence (lambda-body exp))))  
      (lambda (env succeed fail) 
-       (my-display " ***** CS in analyze-lambda,scd=") (my-display succeed) (my-display " exp=") (my-display exp) (my-newline)
        (succeed (make-procedure vars bproc env) fail)
-       (my-display " ***** end of CS in analyze-lambda,scd=") (my-display succeed) (my-display " exp=") (my-display exp) (my-newline)
        ))) 
-
-(define (analyze-if-fail exp)
-  
-
-  (let ((fproc (analyze (if-fail-first exp)))
-        (sproc (analyze (if-fail-second exp))))
-        (lambda (env succeed fail)
-          (fproc env 
-                 (lambda (val fail2)
-                   (succeed val fail))
-                 (lambda () (sproc env succeed fail))))))
-
-
-
-
-
-
-
 
 
 (define (analyze-if exp)
@@ -661,50 +548,22 @@
         (cproc (analyze (if-consequent exp)))
         (aproc (analyze (if-alternative exp))))
     (lambda (env succeed fail) 
-
       (pproc env  
-
-             
-
-             
-
              (lambda (pred-value fail2)  
-
                (if (true? pred-value)
                    (cproc env succeed fail2)
                    (aproc env succeed fail2)))
-             
-
              fail))))
-
-
-
-
-
-
-
-
-
-
-
 
 (define (analyze-definition exp)
   (let ((var (definition-variable exp))
         (vproc (analyze (definition-value exp))))
     (lambda (env succeed fail)
- 
-
       (vproc env                        
              (lambda (val fail2) 
-
                (define-variable! var val env)
-               
-               (my-display " ***** CS in S4,scd=") (my-display succeed) (my-display " exp=") (my-display exp) (my-newline)
                (succeed (void) fail2)
-               (my-display " ***** endof CS in S4,scd=") (my-display succeed) (my-display " exp=") (my-display exp) (my-newline)
                ) 
-
-             
              fail))))  
 
 (define (analyze-assignment exp)
@@ -729,20 +588,11 @@
 
 
 (define (analyze-sequence exps) 
-
-  (my-display "in analyze-sequence, exps = ") (my-display exps) (my-newline)
   (define (sequentially a b) 
-
     (lambda (env succeed fail) 
-
       (a env
-         
-
          (lambda (a-value fail2)  
-
            (b env succeed fail2))
-         
-
          fail)))
   (define (loop first-proc rest-procs)
     (if (null? rest-procs)
@@ -755,50 +605,8 @@
         (void))
     (loop (car procs) (cdr procs))))
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
   
 (define (analyze-application exp)
-  (my-display "in analyze-application,exp = :") (my-display exp) (my-newline)
   (let ((fproc (analyze (operator exp)))
         (aprocs (map analyze (operands exp))))
     (lambda (env succeed fail) 
@@ -817,80 +625,25 @@
              fail))))
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 (define (get-args aprocs env scd fail) 
-
-  
-
-  
-
-  
-
   (if (null? aprocs)
       (scd '() fail)  
       ((car aprocs) env   
-
-                    
-
                     (lambda (arg fail2) 
-
                       (get-args (cdr aprocs)
                                 env
-                                
-
-                                
-
                                 (lambda (args fail3) 
 
                                   (scd (cons arg args)  
-
                                            fail3))
                                 fail2))
                     fail)))
 
 
 (define (execute-application proc args succeed fail) 
-
-  (my-display "in excute-application,proc = ") (my-display (simple-proc-obj proc)) (my-display " args=") (my-display args) (my-display " succeed = ") (my-display succeed) 
-  (my-display "fail = " ) (my-display fail) (my-newline)
   (cond ((primitive-procedure? proc)
-         
          (let ((m (apply-primitive-procedure proc args)))
-           (my-display " ***** CS in excute-application,scd=") (my-display succeed) ( my-display " val=" ) (my-display  m) (my-newline)
            (succeed m fail)
-           (my-display " ***** end of CS in excute-application,scd=") (my-display succeed) ( my-display " val=" ) (my-display  m) (my-newline)
          ))
         ((compound-procedure? proc)
          ((procedure-body proc)
@@ -910,19 +663,13 @@
 
 
 (define (analyze-amb exp)  
-
-  (my-display "in analyze-amb,exp=" ) (my-display exp) (my-newline)
   (let ((cprocs (map analyze (amb-choices exp))))
     (lambda (env succeed fail) 
-
-      (my-display "in analyze-amb,succeed=" ) (my-display succeed) (my-display " fail= ") (my-display fail) (my-newline)
       (define (try-next choices)
         (if (null? choices)
-            (begin (my-display "     ****calling fail=") (my-display fail) (my-newline) (fail) (my-display "      ****end of calling fail=") (my-display fail) (my-newline)) 
-
+            (fail)
             ((car choices) env
                            succeed 
-
                            (lambda () 
 
                              (try-next (cdr choices))))))
@@ -931,41 +678,6 @@
   
 (define (procedure-environment proc)
   (car (cdr (cdr (cdr proc)))))
-
-
-
-
-
-  
-(define (driver-loop)
-  (define (internal-loop try-again)
-    (let ((input (read)))
-      (if (eq? input 'try-again)
-          (try-again)
-          (begin
-            (newline)
-            (ambeval input
-                     glb-env
-                     
-
-                     (lambda (val next-alternative) 
-
-                       (user-print val)
-                       (internal-loop next-alternative)) 
-
-                     
-
-                     (lambda ()
-                        (display "There are no more values of") 
-                       (user-print input)
-                       (newline)
-                       (driver-loop)))))))
-  (internal-loop
-   (lambda ()
-     (newline)
-     (display "There is no current problem") 
-
-     (driver-loop))))  
 
 
 (define rq '(define (require p)
@@ -982,52 +694,21 @@
 
 (define glb-fail
   (lambda () 
-    (display "no answer") (newline)))
+    (display "There are no more answers.") (newline)))
 
 (define glb-env (setup-environment))
 (ambeval rq glb-env (lambda (val fail) (void)) glb-fail)
 
-
-
-
-
+(define las-fail (void))
 (define (my-driver-loop)
-  (define (internal-loop try-again)
-    (let ((input (read)))
-      (if (eq? input eof)
-          (void)
-          (if (eq? input 'try-again)
-              (try-again)
-              (if (eq? (car input) 'all-answer)
-                  (ambeval   (cadr input)
-                             glb-env
-                             (lambda (val fail)
-                               (if (eq? val (void))
-                                   (void)
-                                   (begin (display val) (newline)))
-                               (fail))
-                             (lambda ()  
-                               (my-driver-loop)))
-                  (begin
-                    (ambeval input
-                             glb-env
-                             (lambda (val fail)
-                               (if (eq? val (void))
-                                   (void)
-                                   (begin (display val) (newline)))
-                               (internal-loop fail))
-                             (lambda ()  
-                               (display "There are no more answers.") 
-                               (newline)
-                               (my-driver-loop)))
-                    (my-driver-loop)))))))
-  (internal-loop
-   (lambda ()
-     (display "There are no more answers.")  
-
-     (newline)
-     (my-driver-loop)))) 
-
+  (let ((input (read))) 
+    (cond ((eq? input eof) (void))
+          ((eq? input 'try-again) (las-fail) (my-driver-loop))
+          (else
+               (ambeval input glb-env 
+                        (lambda (val fail)
+                          (unless (eq? val (void)) (displayln val))
+                          (set! las-fail fail))
+                          glb-fail)
+               (my-driver-loop)))))
 (my-driver-loop)
-
- 

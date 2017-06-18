@@ -166,6 +166,7 @@
 
 
 (define (if? exp) (tagged-list? exp 'if)) 
+(define (new-if? exp) (tagged-list? exp 'new-if)) 
 (define (if-predicate exp) (cadr exp)) 
 
 (define (if-consequent exp) (caddr exp)) 
@@ -486,6 +487,7 @@
          ((assignment? exp) (analyze-assignment exp))
          ((definition? exp) (analyze-definition exp))
          ((if? exp) (analyze-if exp))
+         ((new-if? exp) (analyze-new-if exp))
          ((lambda? exp) (analyze-lambda exp))
          ((begin? exp) (analyze-sequence (begin-actions exp)))
          ((cond? exp) (analyze (cond->if exp)))  
@@ -533,6 +535,17 @@
                    (cproc env succeed fail2)
                    (aproc env succeed fail2)))
              fail))))
+
+(define (analyze-new-if exp)
+  (let ((pproc (analyze (if-predicate exp)))
+        (cproc (analyze (if-consequent exp)))
+        (aproc (analyze (if-alternative exp))))
+    (lambda (env succeed fail)
+      (pproc env
+            (lambda (pred-value fail2)  
+                  (cproc env succeed fail2))
+            (lambda ()
+                  (aproc env succeed fail))))))
 
 (define (analyze-definition exp)
   (let ((var (definition-variable exp))

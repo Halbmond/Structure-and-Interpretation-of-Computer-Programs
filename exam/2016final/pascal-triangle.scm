@@ -1,0 +1,15 @@
+#lang racket
+(let loop ([N 0])
+	(unless (eq? N eof)
+		(let f ([n N])
+			(if (= n 0) '(1)
+				(let* ([a (f (- n 1))] [b (map + (cons 0 a) (append a '(0)))])
+					(for ([x a]) (printf "~a " x))
+					(newline)
+					b
+				)
+			)
+		)
+		(loop (read))
+	)
+)

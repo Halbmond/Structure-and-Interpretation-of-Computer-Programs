@@ -1,5 +1,6 @@
-
+;basic machine interpreter
 #lang racket
+;machine interpreter
 (require racket/mpair)
 
 (define (mtagged-list? exp tag) 
@@ -12,8 +13,31 @@
       (eq? (car exp) tag)
       false))
 
-
-(define (make-machine register-names ops controller-text)
+(define (dec num x)
+  (if (or (symbol? x) (eq? 'break (car x)))
+    num
+    (sub1 num)
+  )
+)
+(define (insert-break l b no)
+  (if (eq? (car b) #t)
+    (if (= 0 (cadr b))
+      (cons (cons 'break (cons no (cddr b))) l)
+      (cons (car l) (insert-break (cdr l) (cons #t (cons (dec (cadr b) (car l)) (cddr b))) no))
+    )
+    (if (and (symbol? (car l)) (eq? (car l) (car b)))
+      (cons (car l) (insert-break (cdr l) (cons #t (cdr b)) no))
+      (cons (car l) (insert-break (cdr l) b no))
+    )
+  )
+)
+(define (make-machine register-names ops controller-text breaks)
+  (define cnt 0)
+  (for-each (lambda (x)
+    (set! controller-text (insert-break controller-text x cnt))
+    (set! cnt (add1 cnt))
+  ) breaks)
+  
   (let ((machine (make-new-machine)))
     (for-each (lambda (register-name)
                 ((machine 'allocate-register) register-name))
@@ -21,7 +45,8 @@
     ((machine 'install-operations) ops)    
     ((machine 'install-instruction-sequence)
      (assemble controller-text machine))
-    machine))
+    machine)
+)
 
 (define (make-register name) 
   (let ((contents '*unassigned*))
@@ -72,7 +97,6 @@
   (let ((pc (make-register 'pc)) 
         (flag (make-register 'flag)) 
         (stack (make-stack))
-        (error-flag false)
         (the-instruction-sequence '())) 
     (let ((the-ops
            (list (list 'initialize-stack
@@ -87,31 +111,38 @@
                         register-table)))
         'register-allocated)
       (define (lookup-register name) 
+
         (let ((val (assoc name register-table)))
           (if val
               (cadr val)  
+
               (error "Unknown register:" name))))
       (define (execute)
-        (let ((insts (get-contents pc))) 
+        (let ((insts (get-contents pc)))  
+
           (if (null? insts)
               (void)
               (begin
                 ((instruction-execution-proc (mcar insts))) 
+
                 (execute)))))
       (define (dispatch message)
         (cond ((eq? message 'start)
                (set-contents! pc the-instruction-sequence) 
+
                (execute)) 
+
               ((eq? message 'install-instruction-sequence) 
+
                (lambda (seq) (set! the-instruction-sequence seq)))
               ((eq? message 'allocate-register) allocate-register)
               ((eq? message 'get-register) lookup-register)
               ((eq? message 'install-operations) 
+
                (lambda (ops) (set! the-ops (append the-ops ops))))
               ((eq? message 'stack) stack) 
+
               ((eq? message 'operations) the-ops) 
-              ((eq? message 'set-error-flag) (lambda (flag) (set! error-flag flag) )) 
-              ((eq? message 'get-error-flag) error-flag)
               (else (error "Unknown request -- MACHINE" message))))
       dispatch)))
 
@@ -125,54 +156,57 @@
   (void))
 
 (define (get-register machine reg-name)  
+
   ((machine 'get-register) reg-name))
 
-(define (set-error-flag machine flag)
-  ((machine 'set-error-flag) flag))
 
-(define (get-error-flag machine)
-  (machine 'get-error-flag))
+
 
 
 (define (assemble controller-text machine)
-  (let ((ret-val (extract-labels controller-text
-                                 (lambda (insts labels)
-                                   (update-insts! insts labels machine) 
-                                   insts))))
-    (if (eq? ret-val 'error-label)
-        (begin (set-error-flag machine ret-val) '())
-        ret-val)))
-       
+  (extract-labels controller-text
+    (lambda (insts labels)
+      (update-insts! insts labels machine) 
+
+      insts)))
 
 
 (define (extract-labels text receive) 
+
   (if (null? text)
       (receive '() '()) 
+
       (extract-labels (cdr text)
        (lambda (insts labels)
          (let ((next-inst (car text)))
            (if (symbol? next-inst)
                  (if (assoc next-inst labels)
-                     'error-label
+                     (exit)
                      (receive insts
                         (cons (make-label-entry next-inst
                                                 insts)
                               labels)))
-               (receive (mcons (make-instruction next-inst)  ;changed ,ori: cons
+               (receive (mcons (make-instruction next-inst)  
+
                               insts)
                         labels)))))))
 
 
 (define (update-insts! insts labels machine) 
+
   
+
   (let ((pc (get-register machine 'pc))
         (flag (get-register machine 'flag))
         (stack (machine 'stack))
         (ops (machine 'operations))) 
-    (mfor-each ;changed, ori for-each
+
+    (mfor-each 
+
      (lambda (inst)
        (set-instruction-execution-proc! 
         inst  
+
         (make-execution-procedure
          (instruction-text inst) labels machine
          pc flag stack ops)))
@@ -180,7 +214,10 @@
 
 
 
+
+
 (define (make-instruction text) 
+
   (mcons text '())) 
 (define (instruction-text inst)
   (mcar inst))
@@ -189,23 +226,35 @@
 (define (set-instruction-execution-proc! inst proc)
   (set-mcdr! inst proc)) 
 
+
+
+
+
 (define (make-label-entry label-name insts)
   (cons label-name insts)) 
  
+
+ 
+
+
 (define (lookup-label labels label-name)   
+
   (let ((val (assoc label-name labels)))
     (if val
         (cdr val) 
+
         (error "Undefined label -- ASSEMBLE" label-name))))
 
 
 
 
 
-(define (make-execution-procedure inst labels machine 
-                                  pc flag stack ops) 
+
+(define (make-execution-procedure inst labels machine pc flag stack ops) 
   (cond ((eq? (car inst) 'assign)
          (make-assign inst machine labels ops pc))
+        ((eq? (car inst) 'break)
+         (make-break inst machine labels ops pc))
         ((eq? (car inst) 'test)
          (make-test inst machine labels ops flag pc))
         ((eq? (car inst) 'branch)
@@ -218,27 +267,40 @@
          (make-restore inst machine stack pc))
         ((eq? (car inst) 'perform)
          (make-perform inst machine labels ops pc))
-        ((eq? (car inst) 'swap)
-         (make-swap inst machine labels ops pc))
         (else (error "Unknown instruction type -- ASSEMBLE"
                      inst))))
 
 
 (define (make-assign inst machine labels operations pc)
   (let ((target 
-         (get-register machine (assign-reg-name inst))) 
+         (get-register machine (assign-reg-name inst)))  
         (value-exp (assign-value-exp inst))) 
     (let ((value-proc
            (if (operation-exp? value-exp)  
                (make-operation-exp
                 value-exp machine labels operations)
                (make-primitive-exp
-                (car value-exp) machine labels))))  ;(car value-exp)形如 (reg b)
-      (lambda ()                ; execution procedure for assign
+                (car value-exp) machine labels))))  
+      (lambda ()                
         (set-contents! target (value-proc)) 
         (advance-pc pc))))) 
 
-
+(define (make-break inst machine labels operations pc)
+  (let ( (no (cadr inst)) 
+    (regs (map (lambda (regname) (get-register machine regname)) (cddr inst))))
+    (lambda ()
+      (display "at breakpoint ")
+      (display no)
+      (display ":")
+      (for-each (lambda (reg)
+        (display (get-contents reg))
+        (display " ")
+      ) regs)
+      (newline)
+      (advance-pc pc)
+    ) 
+  )
+)
 
 
 (define (assign-reg-name assign-instruction)
@@ -248,29 +310,16 @@
 
 
 (define (advance-pc pc) 
-  (set-contents! pc (mcdr (get-contents pc))))  
 
-
-
-(define (make-swap inst machine labels operations pc)
-  (let ((r1 (get-register machine (swap-reg1 inst)))
-        (r2 (get-register machine (swap-reg2 inst))))
-      (lambda ()                ; execution procedure for assign
-        (let ((tmp (get-contents r1)))
-          (set-contents! r1 (get-contents r2))
-          (set-contents! r2 tmp)
-          (advance-pc pc))))) 
-
-(define (swap-reg1 inst)
-  (cadr inst))
-(define (swap-reg2 inst)
-  (caddr inst))
+  (set-contents! pc (mcdr (get-contents pc))))   
 
 
 
 (define (make-test inst machine labels operations flag pc)
   (let ((condition (test-condition inst))) 
+
     (if (operation-exp? condition) 
+
         (let ((condition-proc
                (make-operation-exp
                 condition machine labels operations)))
@@ -299,6 +348,7 @@
 
 
 (define (make-goto inst machine labels pc) 
+
   (let ((dest (goto-dest inst)))
     (cond ((label-exp? dest)
            (let ((insts
@@ -318,6 +368,7 @@
 
 
 (define (make-save inst machine stack pc) 
+
   (let ((reg (get-register machine
                            (stack-inst-reg-name inst))))
     (lambda ()
@@ -346,19 +397,21 @@
 
 
 (define (make-primitive-exp exp machine labels) 
-  
   (cond ((constant-exp? exp)
          (let ((c (constant-exp-value exp)))
            (lambda () c)))
         ((label-exp? exp)
          (let ((insts
                 (lookup-label labels  
+
                               (label-exp-label exp))))
-           (lambda () insts))) ;
+           (lambda () insts))) 
+
         ((register-exp? exp)
          (let ((r (get-register machine
                                 (register-exp-reg exp))))
            (lambda () (get-contents r))))  
+
         (else
          (error "Unknown expression type -- ASSEMBLE" exp))))
 
@@ -373,9 +426,9 @@
 
 (define (make-operation-exp exp machine labels operations)
   (let ((op (lookup-prim (operation-exp-op exp) operations))  
-        
         (aprocs
-         (map (lambda (e) 
+         (map (lambda (e)  
+
                 (make-primitive-exp e machine labels))
               (operation-exp-operands exp))))
     (lambda ()
@@ -437,8 +490,6 @@
    '(a b t)
    (list (list 'rem remainder) (list '= =))
    '(test-b
-       (swap a b)
-       (swap a b)
        (test (op =) (reg b) (const 0))
        (branch (label gcd-done))
        (assign t (op rem) (reg a) (reg b))
@@ -457,39 +508,59 @@
  fib-loop
    (test (op <) (reg n) (const 2))
    (branch (label immediate-answer))
-   ;; set up to compute Fib(n - 1)
+   
+
    (save continue)
 fib-loop
    (assign continue (label afterfib-n-1))
-   (save n)                           ; save old value of n
-   (assign n (op -) (reg n) (const 1)); clobber n to n - 1
-   (goto (label fib-loop))            ; perform recursive call
- afterfib-n-1                         ; upon return, val contains Fib(n - 1)
+   (save n)                           
+
+   (assign n (op -) (reg n) (const 1))
+
+   (goto (label fib-loop))            
+
+ afterfib-n-1                         
+
    (restore n)
    (restore continue)
-   ;; set up to compute Fib(n - 2)
+   
+
    (assign n (op -) (reg n) (const 2))
    (save continue)
    (assign continue (label afterfib-n-2))
-   (save val)                         ; save Fib(n - 1)
+   (save val)                         
+
    (goto (label fib-loop))
- afterfib-n-2                         ; upon return, val contains Fib(n - 2)
-   (assign n (reg val))               ; n now contains Fib(n - 2)
-   (restore val)                      ; val now contains Fib(n - 1)
+ afterfib-n-2                         
+
+   (assign n (reg val))               
+
+   (restore val)                      
+
    (restore continue)
-   (assign val                        ;  Fib(n - 1) +  Fib(n - 2)
+   (assign val                        
+
            (op +) (reg val) (reg n)) 
-   (goto (reg continue))              ; return to caller, answer is in val
+   (goto (reg continue))              
+
  immediate-answer
-   (assign val (reg n))               ; base case:  Fib(n) = n
+   (assign val (reg n))               
+
    (goto (reg continue))
  fib-done)))
 
-
+(define add-machine-text
+'(make-machine
+   '(c d val)
+   (list (list '+ +))
+   '(
+       assign val (op +) (reg c) (reg d) 
+     )))
 
 
 (define (get-op-table lst)
-  (define (change op) ;op形如 ('= =)
+  (define (change op) 
+
     (let ((o (cadr op)))
       (cond ((eq? o '=) (cons (cadar op) (list =)))
             ((eq? o '+) (cons (cadar op) (list +)))
@@ -498,7 +569,7 @@ fib-loop
             ((eq? o '/) (cons (cadar op) (list /)))
             ((eq? o '<) (cons (cadar op) (list <)))            
             ((eq? o '>) (cons (cadar op) (list >)))            
-            ((eq? o 'eq?) (cons (cadar op) (list eq?)))  
+            ((eq? o 'eq?) (cons (cadar op) (list eq?)))            
             ((eq? o 'remainder) (cons (cadar op) (list remainder))))))
   (if (null? lst)
       '()
@@ -508,11 +579,14 @@ fib-loop
   (define reg-table (cadr (cadr machine-text)))
   (define op-table (get-op-table (cdr (caddr machine-text))))
   (define controller (cadr (cadddr machine-text)))
-  (make-machine reg-table op-table controller))
+  (define breaks (cddddr machine-text))
+  (make-machine reg-table op-table controller breaks)
+)
 
 
 
 (define (run-machine machine input output) 
+
   (define (init-machine machine input) 
     (if (null? input)
         (void)
@@ -523,13 +597,10 @@ fib-loop
         (void)
         (begin (display (get-register-contents machine (car output))) (display " ") 
                (output-machine machine (cdr output)))))
-  (if (get-error-flag machine)
-      (void)
-      (begin 
-        (init-machine machine input)
-        (start machine)
-        (output-machine machine output)
-        (newline))))
+  (init-machine machine input)
+  (start machine)
+  (output-machine machine output)
+  (newline))
   
 
 
@@ -542,26 +613,13 @@ fib-loop
                 (if (eq? (car m-txt) 'make-machine)
                     (begin (set! machine (make-machine-from-text m-txt))
                            (display "a new machine") (newline)
-                           (if (get-error-flag machine)
-                               (begin (display "label error in machine") (newline))
-                               (void))
                            (run-machine machine (read) (read))
                            (inner-loop))
                     (begin (run-machine machine m-txt (read)) 
                            (inner-loop))))))
     (inner-loop)))
 
+
 (process-loop)
-
-
-
-
-
-;(define fib-machine (make-machine-from-text fib-machine-text))
-;(define gcd-machine (make-machine-from-text gcd-machine-text)) 
-;(run-machine fib-machine '((n 12)) '(val))  
-;(run-machine fib-machine '((n 8)) '(val))  ;
-;(run-machine gcd-machine '((a 12) (b 18)) '(a))  
-;(run-machine gcd-machine '((a 102) (b 27)) '(a))  
 
 

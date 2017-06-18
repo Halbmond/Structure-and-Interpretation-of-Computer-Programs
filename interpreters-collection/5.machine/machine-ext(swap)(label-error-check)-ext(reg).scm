@@ -1,8 +1,8 @@
-
+;basic machine interpreter
 #lang racket
-
+;machine interpreter
 (require racket/mpair)
-
+(define error-label #f)
 (define (mtagged-list? exp tag) 
   (if (mpair? exp) 
       (eq? (mcar exp) tag)
@@ -14,11 +14,11 @@
       false))
 
 
-(define (make-machine ops controller-text)
+(define (make-machine register-names ops controller-text)
   (let ((machine (make-new-machine)))
-;    (for-each (lambda (register-name)
-;                ((machine 'allocate-register) register-name))
-;              register-names)
+    (for-each (lambda (register-name)
+                ((machine 'allocate-register) register-name))
+              register-names)
     ((machine 'install-operations) ops)    
     ((machine 'install-instruction-sequence)
      (assemble controller-text machine))
@@ -73,7 +73,6 @@
   (let ((pc (make-register 'pc)) 
         (flag (make-register 'flag)) 
         (stack (make-stack))
-        (error-flag false)
         (the-instruction-sequence '())) 
     (let ((the-ops
            (list (list 'initialize-stack
@@ -82,39 +81,45 @@
            (list (list 'pc pc) (list 'flag flag)))) 
       (define (allocate-register name) 
         (if (assoc name register-table)
-            (void) ;changed for ex2
+            (error "Multiply defined register: " name)
             (set! register-table
                   (cons (list name (make-register name))
                         register-table)))
         'register-allocated)
       (define (lookup-register name) 
+        (unless (assoc name register-table)
+                (allocate-register name))
         (let ((val (assoc name register-table)))
           (if val
               (cadr val)  
+
               (error "Unknown register:" name))))
       (define (execute)
         (let ((insts (get-contents pc)))  
+
           (if (null? insts)
               (void)
               (begin
                 ((instruction-execution-proc (mcar insts))) 
+
                 (execute)))))
       (define (dispatch message)
         (cond ((eq? message 'start)
                (set-contents! pc the-instruction-sequence) 
+
                (execute)) 
+
               ((eq? message 'install-instruction-sequence) 
+
                (lambda (seq) (set! the-instruction-sequence seq)))
               ((eq? message 'allocate-register) allocate-register)
               ((eq? message 'get-register) lookup-register)
               ((eq? message 'install-operations) 
+
                (lambda (ops) (set! the-ops (append the-ops ops))))
               ((eq? message 'stack) stack) 
+
               ((eq? message 'operations) the-ops) 
-              ((eq? message 'registers) register-table)
-              ((eq? message 'set-error-flag) (lambda (flag) (set! error-flag flag) )) 
-              ((eq? message 'get-error-flag) error-flag)
-              
               (else (error "Unknown request -- MACHINE" message))))
       dispatch)))
 
@@ -128,53 +133,57 @@
   (void))
 
 (define (get-register machine reg-name)  
+
   ((machine 'get-register) reg-name))
 
-(define (set-error-flag machine flag)
-  ((machine 'set-error-flag) flag))
 
-(define (get-error-flag machine)
-  (machine 'get-error-flag))
+
+
 
 (define (assemble controller-text machine)
-  (let ((ret-val (extract-labels controller-text
-                                 (lambda (insts labels)
-                                   (update-insts! insts labels machine)
-                                   insts))))
-    (if (eq? ret-val 'error-label)
-        (begin (set-error-flag machine ret-val) '())
-        ret-val)))
-       
+  (extract-labels controller-text
+    (lambda (insts labels)
+      (update-insts! insts labels machine) 
+
+      insts)))
 
 
 (define (extract-labels text receive) 
+
   (if (null? text)
       (receive '() '()) 
+
       (extract-labels (cdr text)
        (lambda (insts labels)
          (let ((next-inst (car text)))
            (if (symbol? next-inst)
                  (if (assoc next-inst labels)
-                     'error-label
+                     (set! error-label #t) ;;changed to support error-label
                      (receive insts
                         (cons (make-label-entry next-inst
                                                 insts)
                               labels)))
-               (receive (mcons (make-instruction next-inst)  ;changed ,ori: cons
+               (receive (mcons (make-instruction next-inst)  
+
                               insts)
                         labels)))))))
 
 
 (define (update-insts! insts labels machine) 
+
   
+
   (let ((pc (get-register machine 'pc))
         (flag (get-register machine 'flag))
         (stack (machine 'stack))
-        (ops (machine 'operations)))
-    (mfor-each ;changed, ori for-each
+        (ops (machine 'operations))) 
+
+    (mfor-each 
+
      (lambda (inst)
        (set-instruction-execution-proc! 
         inst  
+
         (make-execution-procedure
          (instruction-text inst) labels machine
          pc flag stack ops)))
@@ -182,7 +191,10 @@
 
 
 
+
+
 (define (make-instruction text) 
+
   (mcons text '())) 
 (define (instruction-text inst)
   (mcar inst))
@@ -193,22 +205,29 @@
 
 
 
+
+
 (define (make-label-entry label-name insts)
   (cons label-name insts)) 
+ 
 
-(define (lookup-label labels label-name) 
+ 
+
+
+(define (lookup-label labels label-name)   
+
   (let ((val (assoc label-name labels)))
     (if val
         (cdr val) 
+
         (error "Undefined label -- ASSEMBLE" label-name))))
 
 
 
 
-  
 
-(define (make-execution-procedure inst labels machine 
-                                  pc flag stack ops)
+
+(define (make-execution-procedure inst labels machine pc flag stack ops) 
   (cond ((eq? (car inst) 'assign)
          (make-assign inst machine labels ops pc))
         ((eq? (car inst) 'test)
@@ -223,48 +242,37 @@
          (make-restore inst machine stack pc))
         ((eq? (car inst) 'perform)
          (make-perform inst machine labels ops pc))
+        ;; added to support swap
         ((eq? (car inst) 'swap)
-         (make-swap inst machine labels ops pc))
+         (lambda ()
+           ;(display inst)
+           (define r1 (get-register machine (cadr inst)))
+           (define r2 (get-register machine (caddr inst)))
+           ;(printf "~a ~a\n" r1 r2)
+           (define tmp (get-contents r1))
+           (set-contents! r1 (get-contents r2))
+           (set-contents! r2 tmp)
+           (advance-pc pc)
+         )
+        )
+        ;; added to support swap
         (else (error "Unknown instruction type -- ASSEMBLE"
                      inst))))
 
-(define (add-reg-list machine reg-lst) 
-  (if (null? reg-lst)
-      (void)
-      (if (eq? (caar reg-lst) 'reg)
-          (begin ((machine 'allocate-register) (cadr (car reg-lst))) (add-reg-list machine (cdr reg-lst)))
-          (add-reg-list machine (cdr reg-lst)))))
-  
-  
-(define (make-assign inst machine labels operations pc);为 assign指令inst生成一个可执行过程, assign指令形如： (assign n (reg b) ) n是regname
 
-  ;(assign <register-name> (reg <register-name>))
-  ;(assign <register-name> (const <constant-value>))
-  ;(assign <register-name> (op <operation-name>) 
-  ;                          <input1> ... <inputn>)
-  ;(assign <register-name> (label <label-name>))
-  ;上面<inputi>是  (reg <register-name>) 或 (const <constant-value>).
-  (define (add-register) 
-    ((machine 'allocate-register) (assign-reg-name inst))
-    (if (eq? (car (caddr inst)) 'reg)
-        ((machine 'allocate-register) (cadr (caddr inst)))
-        (if (eq? (car (caddr inst)) 'op)
-            (add-reg-list machine (cdddr inst))
-            (void))))  
-  (add-register)
+(define (make-assign inst machine labels operations pc)
   (let ((target 
-         (get-register machine (assign-reg-name inst)))  ;取得n
-        (value-exp (assign-value-exp inst))) ; (cddr inst),相当于 ((reg b))
+         (get-register machine (assign-reg-name inst)))  
+        (value-exp (assign-value-exp inst))) 
     (let ((value-proc
-           (if (operation-exp? value-exp)  ; value-exp 形如 ((op rem))则是 operation-exp
+           (if (operation-exp? value-exp)  
                (make-operation-exp
                 value-exp machine labels operations)
                (make-primitive-exp
-                (car value-exp) machine labels))))  ;(car value-exp)形如 (reg b)
-      (lambda ()                ; execution procedure for assign
-        (set-contents! target (value-proc)) ;set-contents!设置寄存器target的值为 (value-proc) 
-        (advance-pc pc))))) ;程序计数器向前推进即pc.content = (cdr pc.content)
-
+                (car value-exp) machine labels))))  
+      (lambda ()                
+        (set-contents! target (value-proc)) 
+        (advance-pc pc))))) 
 
 
 
@@ -274,34 +282,17 @@
   (cddr assign-instruction))
 
 
-(define (advance-pc pc) ;pc里面有状态变量 content，指向指令序列里面某处  (cdr content)就指向再下一条指令。
-  (set-contents! pc (mcdr (get-contents pc))))   ; get-contents: (register 'get) changed, cdr->mcdr
+(define (advance-pc pc) 
 
-
-
-(define (make-swap inst machine labels operations pc);为swap指令inst生成一个可执行过程, swap指令形如： (swap a b)
-  ((machine 'allocate-register) (swap-reg1 inst))
-  ((machine 'allocate-register) (swap-reg2 inst))
-  (let ((r1 (get-register machine (swap-reg1 inst)))
-        (r2 (get-register machine (swap-reg2 inst))))
-      (lambda ()                ; execution procedure for assign
-        (let ((tmp (get-contents r1)))
-          (set-contents! r1 (get-contents r2))
-          (set-contents! r2 tmp)
-          (advance-pc pc))))) ;程序计数器向前推进即pc.content = (cdr pc.content)
-
-(define (swap-reg1 inst)
-  (cadr inst))
-(define (swap-reg2 inst)
-  (caddr inst))
+  (set-contents! pc (mcdr (get-contents pc))))   
 
 
 
 (define (make-test inst machine labels operations flag pc)
-  ;test形式: (test (op <operation-name>) <input1> ... <inputn>)
-  (add-reg-list machine (cddr inst))
-  (let ((condition (test-condition inst))) ;inst 形如 (test (op =) (reg n) (const 1))
-    (if (operation-exp? condition) ;condition 形如 ((op =) (reg n) (const 1))
+  (let ((condition (test-condition inst))) 
+
+    (if (operation-exp? condition) 
+
         (let ((condition-proc
                (make-operation-exp
                 condition machine labels operations)))
@@ -315,7 +306,7 @@
 
 
 
-(define (make-branch inst machine labels flag pc) ;branch 形如 (branch (label base-case))
+(define (make-branch inst machine labels flag pc) 
   (let ((dest (branch-dest inst)))
     (if (label-exp? dest)
         (let ((insts
@@ -329,8 +320,8 @@
   (cadr branch-instruction))
 
 
-(define (make-goto inst machine labels pc) ;inst形如(goto (reg continue))或 (goto (label fact-loop))
-  
+(define (make-goto inst machine labels pc) 
+
   (let ((dest (goto-dest inst)))
     (cond ((label-exp? dest)
            (let ((insts
@@ -338,7 +329,6 @@
                                 (label-exp-label dest))))
              (lambda () (set-contents! pc insts))))
           ((register-exp? dest)
-           ((machine 'allocate-register) (register-exp-reg dest))
            (let ((reg
                   (get-register machine
                                 (register-exp-reg dest))))
@@ -350,15 +340,14 @@
   (cadr goto-instruction))
 
 
-(define (make-save inst machine stack pc) ;inst形如 (save n)
-  ((machine 'allocate-register) (stack-inst-reg-name inst))
+(define (make-save inst machine stack pc) 
+
   (let ((reg (get-register machine
                            (stack-inst-reg-name inst))))
     (lambda ()
       (push stack (get-contents reg))
       (advance-pc pc))))
 (define (make-restore inst machine stack pc)
-  ((machine 'allocate-register) (stack-inst-reg-name inst))
   (let ((reg (get-register machine
                            (stack-inst-reg-name inst))))
     (lambda ()
@@ -368,7 +357,6 @@
   (cadr stack-instruction))
 
 (define (make-perform inst machine labels operations pc)
-  (add-reg-list machine (cddr inst))
   (let ((action (perform-action inst)))
     (if (operation-exp? action)
         (let ((action-proc
@@ -381,20 +369,22 @@
 (define (perform-action inst) (cdr inst))
 
 
-(define (make-primitive-exp exp machine labels) ;exp形如: (reg b) 或 (const 3) 或 (label thing-done)
-  ;返回值一定是个过程，执行该过程，得到exp的值。如果exp是个标号，则返回该标号代表的指令序列中的位置
+(define (make-primitive-exp exp machine labels) 
   (cond ((constant-exp? exp)
          (let ((c (constant-exp-value exp)))
            (lambda () c)))
         ((label-exp? exp)
          (let ((insts
-                (lookup-label labels  ;lookup-label的返回值是一个指针，指向指令序列的某处
+                (lookup-label labels  
+
                               (label-exp-label exp))))
-           (lambda () insts))) ;
+           (lambda () insts))) 
+
         ((register-exp? exp)
          (let ((r (get-register machine
                                 (register-exp-reg exp))))
-           (lambda () (get-contents r))))  ;返回寄存器的值
+           (lambda () (get-contents r))))  
+
         (else
          (error "Unknown expression type -- ASSEMBLE" exp))))
 
@@ -408,16 +398,16 @@
 
 
 (define (make-operation-exp exp machine labels operations)
-  (let ((op (lookup-prim (operation-exp-op exp) operations))  ; (operation-exp-op exp) :(cadr (car operation-exp)))  exp形如 ((op rem) (reg a) (reg b))
-        ;op是个可执行过程 operations 也许形如 ((rem #remainder) ...)
+  (let ((op (lookup-prim (operation-exp-op exp) operations))  
         (aprocs
-         (map (lambda (e)  ;e形如: (reg a) (const 3) (lable done)
+         (map (lambda (e)  
+
                 (make-primitive-exp e machine labels))
               (operation-exp-operands exp))))
     (lambda ()
       (apply op (map (lambda (p) (p)) aprocs)))))
 
-(define (operation-exp? exp) ;exp形如 ((op rem) (reg a) (reg b))
+(define (operation-exp? exp) 
   (and (pair? exp) (tagged-list? (car exp) 'op)))
 (define (operation-exp-op operation-exp)
   (cadr (car operation-exp)))
@@ -470,12 +460,9 @@
 
 (define gcd-machine-text
   '(make-machine
+   '(a b t)
    (list (list 'rem remainder) (list '= =))
-
    '(test-b
-       (swap a b)
-       (swap a b)
-     
        (test (op =) (reg b) (const 0))
        (branch (label gcd-done))
        (assign t (op rem) (reg a) (reg b))
@@ -487,44 +474,66 @@
 
 (define fib-machine-text
   '(make-machine
+   '(a b t n continue val)
    (list (list 'rem remainder) (list '= =) (list '< <) (list '+ +) (list '- -))
-'(fib-start
+   '(fib-start
    (assign continue (label fib-done))
  fib-loop
    (test (op <) (reg n) (const 2))
    (branch (label immediate-answer))
-   ;; set up to compute Fib(n - 1)
+   
+
    (save continue)
+fib-loop
    (assign continue (label afterfib-n-1))
-   (save n)                           ; save old value of n
-   (assign n (op -) (reg n) (const 1)); clobber n to n - 1
-   (goto (label fib-loop))            ; perform recursive call
- afterfib-n-1                         ; upon return, val contains Fib(n - 1)
+   (save n)                           
+
+   (assign n (op -) (reg n) (const 1))
+
+   (goto (label fib-loop))            
+
+ afterfib-n-1                         
+
    (restore n)
    (restore continue)
-   ;; set up to compute Fib(n - 2)
+   
+
    (assign n (op -) (reg n) (const 2))
    (save continue)
    (assign continue (label afterfib-n-2))
-   (save val)                         ; save Fib(n - 1)
+   (save val)                         
+
    (goto (label fib-loop))
- afterfib-n-2                         ; upon return, val contains Fib(n - 2)
-   (assign n (reg val))               ; n now contains Fib(n - 2)
-   (restore val)                      ; val now contains Fib(n - 1)
+ afterfib-n-2                         
+
+   (assign n (reg val))               
+
+   (restore val)                      
+
    (restore continue)
-   (assign val                        ;  Fib(n - 1) +  Fib(n - 2)
+   (assign val                        
+
            (op +) (reg val) (reg n)) 
-   (goto (reg continue))              ; return to caller, answer is in val
+   (goto (reg continue))              
+
  immediate-answer
-   (assign val (reg n))               ; base case:  Fib(n) = n
+   (assign val (reg n))               
+
    (goto (reg continue))
  fib-done)))
 
-
+(define add-machine-text
+'(make-machine
+   '(c d val)
+   (list (list '+ +))
+   '(
+       assign val (op +) (reg c) (reg d) 
+     )))
 
 
 (define (get-op-table lst)
-  (define (change op) ;op形如 ('= =)
+  (define (change op) 
+
     (let ((o (cadr op)))
       (cond ((eq? o '=) (cons (cadar op) (list =)))
             ((eq? o '+) (cons (cadar op) (list +)))
@@ -539,13 +548,25 @@
       '()
       (cons (change (cdr (car lst))) (get-op-table (cdr lst)))))
 
-(define (make-machine-from-text machine-text)
+;; use this function instead to support non-reg-table 
+(define (make-machine-from-text-non-reg-table machine-text)
+  (set! error-label #f) ;;added to support error-label
+  ;(define reg-table (cadr (cadr machine-text)))
   (define op-table (get-op-table (cdr (cadr machine-text))))
   (define controller (cadr (caddr machine-text)))
-  (make-machine op-table controller))
+  (make-machine '() op-table controller))
+
+(define (make-machine-from-text machine-text)
+  (set! error-label #f) ;;added to support error-label
+  (define reg-table (cadr (cadr machine-text)))
+  (define op-table (get-op-table (cdr (caddr machine-text))))
+  (define controller (cadr (cadddr machine-text)))
+  (make-machine reg-table op-table controller))
 
 
-(define (run-machine machine input output) ;input 形如: ((n 7) (a 4) (b 3)),output形如 (a b c)
+
+(define (run-machine machine input output)
+(unless error-label ;;added to support error-label
   (define (init-machine machine input) 
     (if (null? input)
         (void)
@@ -556,13 +577,10 @@
         (void)
         (begin (display (get-register-contents machine (car output))) (display " ") 
                (output-machine machine (cdr output)))))
-  (if (get-error-flag machine)
-      (void)
-      (begin 
-        (init-machine machine input)
-        (start machine)
-        (output-machine machine output)
-        (newline))))
+  (init-machine machine input)
+  (start machine)
+  (output-machine machine output)
+  (newline)))
   
 
 
@@ -573,61 +591,16 @@
             (if (eq? m-txt eof)
                 (void)
                 (if (eq? (car m-txt) 'make-machine)
-                    (begin (set! machine (make-machine-from-text m-txt))
+                    (begin (set! machine (make-machine-from-text-non-reg-table m-txt))
                            (display "a new machine") (newline)
-                           (if (get-error-flag machine)
-                               (begin (display "label error in machine") (newline))
-                               (void))
+                           (when error-label (displayln "label error in machine")) ;;added to support error-label
                            (run-machine machine (read) (read))
                            (inner-loop))
                     (begin (run-machine machine m-txt (read)) 
                            (inner-loop))))))
     (inner-loop)))
 
+
 (process-loop)
-
-(define test-machine-text
-  '(make-machine
-   (list (list 'rem remainder) (list '= =) (list 'eq eq)) ;key
-   '(  (assign a (const 112))
-       (assign b (reg m)) ;key
-       (assign b (const 168))
-       (swap a b)
-       (swap b a)
-       (swap a1 b1)
-       (test (op eq) (reg x) (reg y))
-     test-b
-       (test (op =) (reg b) (const 0))
-       (branch (label gcd-done))
-       (assign t (op eq) (reg a) (reg k)) ;key
-       (assign t (op rem) (reg a) (reg b))
-       (assign a (reg b))
-       (assign b (reg t))
-       (goto (label test-b))
-     gcd-done)))
-
-;(define test-machine (make-machine-from-text test-machine-text))
-;(test-machine 'registers)
-;(start test-machine)
-;(get-register-contents test-machine 'a)
-;(get-register-contents test-machine 'm)
-;(get-register-contents test-machine 'k)
-;(get-register-contents test-machine 'x)
-;(get-register-contents test-machine 'y)
-;(get-register-contents test-machine 'a1)
-;(get-register-contents test-machine 'b1)
-
-
-;(define fib-machine (make-machine-from-text fib-machine-text))
-;(fib-machine 'registers)
-;(get-register-contents fib-machine 'val)
-;(get-register-contents fib-machine 'continue)
-
-;(define gcd-machine (make-machine-from-text gcd-machine-text)) 
-;(gcd-machine 'registers)
-;(run-machine fib-machine '((n 12)) '(val))  
-;(run-machine fib-machine '((n 8)) '(val))  ;
-;(run-machine gcd-machine '((a 12) (b 18)) '(a))  
-;(run-machine gcd-machine '((a 102) (b 27)) '(a))  
 
 
