@@ -29,4 +29,4 @@ Peking University
 * [MIT SICP](https://mitpress.mit.edu/sicp/)
 * [Racket Documentation](https://racket-lang.org)
 * [Learn Racket in Y minutes](https://learnxinyminutes.com/docs/racket/)
-* [My Presentation: Shortest Racket Code Collection](slides.com/colrko/shortest-racket-code-collection/)
+* [My Presentation: Shortest Racket Code Collection](https://slides.com/colrko/shortest-racket-code-collection/)
